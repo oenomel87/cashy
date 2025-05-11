@@ -16,7 +16,7 @@ class MinuteCandleStick:
     unit: int
     
     @classmethod
-    def from_dict(cls, data: dict) -> 'CandleStick':
+    def from_dict(cls, data: dict) -> 'MinuteCandleStick':
         return cls(
             market=data.get('market', ''),
             candle_date_time_utc=data.get('candle_date_time_utc', ''),
