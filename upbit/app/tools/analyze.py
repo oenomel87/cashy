@@ -524,6 +524,385 @@ def calculate_distance_to_level(from_price, to_price) -> float:
     """
     return ((to_price - from_price) / from_price) * 100
 
+async def calculate_moving_averages() -> dict:
+    """
+    비트코인의 이동평균(moving_averages) 정보를 구하는 함수
+    moving_averages는 20일, 50일, 200일 이동평균을 포함합니다.
+    moving_averages 데이터
+    - ma_20d: 20일 이동평균
+    - ma_50d: 50일 이동평균
+    - ma_200d: 200일 이동평균
+    - ma_crossovers: 이동평균 교차 정보 (Golden Cross, Death Cross)
+    """
+    # 1. 캔들 데이터 가져오기
+    candles = await get_candles_for_daily(count=200)  # 200일 이동평균을 위해 충분한 데이터
+    
+    # 2. 데이터프레임으로 변환
+    df = pd.DataFrame(candles)
+    df = df.sort_values('candle_date_time_utc')  # 날짜 오름차순 정렬
+    
+    # 3. 이동평균 계산
+    df['ma_20d'] = df['trade_price'].rolling(window=20).mean()
+    df['ma_50d'] = df['trade_price'].rolling(window=50).mean()
+    df['ma_200d'] = df['trade_price'].rolling(window=200).mean()
+    
+    # 4. 최신 값 추출
+    current_price = df['trade_price'].iloc[-1]
+    ma_20d = df['ma_20d'].iloc[-1]
+    ma_50d = df['ma_50d'].iloc[-1]
+    ma_200d = df['ma_200d'].iloc[-1]
+    
+    # 5. Position과 Signal 결정
+    ma_20d_position = "above" if current_price > ma_20d else "below"
+    ma_20d_signal = "bullish" if ma_20d_position == "above" else "bearish"
+    
+    ma_50d_position = "above" if current_price > ma_50d else "below"
+    ma_50d_signal = "bullish" if ma_50d_position == "above" else "bearish"
+    
+    ma_200d_position = "above" if current_price > ma_200d else "below"
+    ma_200d_signal = "bullish" if ma_200d_position == "above" else "bearish"
+    
+    # 6. 이동평균 교차 확인 (Golden Cross, Death Cross)
+    ma_crossovers = []
+    
+    # 최근 30일간의 데이터에서 교차 확인
+    for i in range(1, min(30, len(df))):
+        # 이전 날 관계
+        prev_ma20_above_ma50 = df['ma_20d'].iloc[-i-1] > df['ma_50d'].iloc[-i-1]
+        # 현재 날 관계
+        curr_ma20_above_ma50 = df['ma_20d'].iloc[-i] > df['ma_50d'].iloc[-i]
+        
+        # 관계가 바뀌었다면 교차 발생
+        if prev_ma20_above_ma50 != curr_ma20_above_ma50:
+            crossover_type = "golden_cross" if curr_ma20_above_ma50 else "death_cross"
+            ma_crossovers.append({
+                "type": crossover_type,
+                "fast_ma": "20d",
+                "slow_ma": "50d",
+                "days_ago": i
+            })
+    
+    # 7. 결과 반환
+    moving_averages = {
+        "ma_200d": {
+            "value": int(ma_200d),
+            "position": ma_200d_position,
+            "signal": ma_200d_signal
+        },
+        "ma_50d": {
+            "value": int(ma_50d),
+            "position": ma_50d_position,
+            "signal": ma_50d_signal
+        },
+        "ma_20d": {
+            "value": int(ma_20d),
+            "position": ma_20d_position,
+            "signal": ma_20d_signal
+        },
+        "ma_crossovers": ma_crossovers
+    }
+    
+    return moving_averages
+
+async def calculate_momentum() -> dict:
+    """
+    비트코인의 모멘텀 지표를 계산하는 함수
+    모멘텀 지표는 RSI, MACD, Stochastic Oscillator를 포함합니다.
+    """
+    # 1. 캔들 데이터 가져오기
+    candles = await get_candles_for_daily(count=50)  # 충분한 데이터
+    
+    # 2. 데이터프레임으로 변환
+    df = pd.DataFrame(candles)
+    df = df.sort_values('candle_date_time_utc')  # 날짜 오름차순 정렬
+    
+    # 3. RSI 계산 (14일 기준)
+    delta = df['trade_price'].diff()
+    gain = delta.where(delta > 0, 0)
+    loss = -delta.where(delta < 0, 0)
+    
+    avg_gain = gain.rolling(window=14).mean()
+    avg_loss = loss.rolling(window=14).mean()
+    
+    rs = avg_gain / avg_loss
+    df['rsi_14d'] = 100 - (100 / (1 + rs))
+    
+    # 최신 및 이전 RSI 값
+    current_rsi = df['rsi_14d'].iloc[-1]
+    previous_rsi = df['rsi_14d'].iloc[-2]
+    
+    # RSI zone 결정
+    rsi_zone = "neutral"
+    if current_rsi >= 70:
+        rsi_zone = "overbought"
+    elif current_rsi <= 30:
+        rsi_zone = "oversold"
+    
+    # RSI trend 결정
+    rsi_trend = "neutral"
+    if current_rsi > previous_rsi:
+        rsi_trend = "rising"
+    elif current_rsi < previous_rsi:
+        rsi_trend = "falling"
+    
+    # 4. MACD 계산
+    # EMA 계산
+    df['ema_12'] = df['trade_price'].ewm(span=12, adjust=False).mean()
+    df['ema_26'] = df['trade_price'].ewm(span=26, adjust=False).mean()
+    
+    # MACD 라인 = 12일 EMA - 26일 EMA
+    df['macd_line'] = df['ema_12'] - df['ema_26']
+    
+    # 시그널 라인 = MACD의 9일 EMA
+    df['signal_line'] = df['macd_line'].ewm(span=9, adjust=False).mean()
+    
+    # 히스토그램 = MACD 라인 - 시그널 라인
+    df['histogram'] = df['macd_line'] - df['signal_line']
+    
+    # 최신 값과 이전 값
+    current_macd = df['macd_line'].iloc[-1]
+    current_signal = df['signal_line'].iloc[-1]
+    current_histogram = df['histogram'].iloc[-1]
+    previous_histogram = df['histogram'].iloc[-2]
+    
+    # MACD 추세 결정
+    macd_trend = "neutral"
+    if abs(current_histogram) < abs(previous_histogram):
+        macd_trend = "converging"
+    elif abs(current_histogram) > abs(previous_histogram):
+        macd_trend = "diverging"
+    elif (current_histogram > 0 and previous_histogram < 0) or (current_histogram < 0 and previous_histogram > 0):
+        macd_trend = "crossover"
+    
+    # 5. Stochastic Oscillator 계산
+    k_period = 14
+    d_period = 3
+    
+    # %K = (현재가 - 기간 내 최저가) / (기간 내 최고가 - 기간 내 최저가) * 100
+    df['lowest_low'] = df['low_price'].rolling(window=k_period).min()
+    df['highest_high'] = df['high_price'].rolling(window=k_period).max()
+    df['stoch_k'] = ((df['trade_price'] - df['lowest_low']) / 
+                     (df['highest_high'] - df['lowest_low'])) * 100
+    
+    # %D = %K의 3일 이동평균
+    df['stoch_d'] = df['stoch_k'].rolling(window=d_period).mean()
+    
+    # 최신 값과 이전 값
+    current_k = df['stoch_k'].iloc[-1]
+    current_d = df['stoch_d'].iloc[-1]
+    previous_k = df['stoch_k'].iloc[-2]
+    previous_d = df['stoch_d'].iloc[-2]
+    
+    # Stochastic zone 결정
+    stoch_zone = "neutral"
+    if current_k >= 80 and current_d >= 80:
+        stoch_zone = "overbought"
+    elif current_k <= 20 and current_d <= 20:
+        stoch_zone = "oversold"
+    
+    # Stochastic trend 결정
+    stoch_trend = "neutral"
+    if current_k > previous_k and current_d > previous_d:
+        stoch_trend = "bullish"
+    elif current_k < previous_k and current_d < previous_d:
+        stoch_trend = "bearish"
+    elif current_k > current_d and previous_k <= previous_d:
+        stoch_trend = "bullish_crossover"
+    elif current_k < current_d and previous_k >= previous_d:
+        stoch_trend = "bearish_crossover"
+    
+    # 6. 결과 반환
+    momentum = {
+        "rsi_14d": {
+            "value": round(current_rsi, 1),
+            "zone": rsi_zone,
+            "trend": rsi_trend
+        },
+        "macd": {
+            "line": round(current_macd / 1000000, 2),  # 단위 조정
+            "signal": round(current_signal / 1000000, 2),
+            "histogram": round(current_histogram / 1000000, 2),
+            "trend": macd_trend
+        },
+        "stochastic": {
+            "k": round(current_k, 1),
+            "d": round(current_d, 1),
+            "trend": stoch_trend,
+            "zone": stoch_zone
+        }
+    }
+    
+    return momentum
+
+async def calculate_volatility() -> dict:
+    """
+    변동성 분석 - Bollinger Bands, ATR
+    """
+    # 1. 캔들 데이터 가져오기
+    candles = await get_candles_for_daily(count=200)  # 충분한 데이터
+    
+    # 2. 데이터프레임으로 변환
+    df = pd.DataFrame(candles)
+    df = df.sort_values('candle_date_time_utc')  # 날짜 오름차순 정렬
+    
+    # 3. Bollinger Bands 계산 (20일 SMA 기준, 2×표준편차)
+    period = 20
+    multiplier = 2
+    
+    df['sma_20'] = df['trade_price'].rolling(window=period).mean()
+    df['std_20'] = df['trade_price'].rolling(window=period).std()
+    df['upper_band'] = df['sma_20'] + (df['std_20'] * multiplier)
+    df['lower_band'] = df['sma_20'] - (df['std_20'] * multiplier)
+    
+    # 밴드 폭 계산 (표준화된 백분율)
+    df['band_width'] = ((df['upper_band'] - df['lower_band']) / df['sma_20']) * 100
+    
+    # 현재 가격의 밴드 내 위치 계산 (0: 하단, 100: 상단)
+    current_price = df['trade_price'].iloc[-1]
+    latest_upper = df['upper_band'].iloc[-1]
+    latest_lower = df['lower_band'].iloc[-1]
+    latest_band_width = df['band_width'].iloc[-1]
+    
+    position = min(100, max(0, ((current_price - latest_lower) / (latest_upper - latest_lower)) * 100))
+    
+    # 밴드 폭 백분위 계산
+    band_width_history = df['band_width'].dropna().sort_values()
+    width_percentile = int(band_width_history.searchsorted(latest_band_width) / len(band_width_history) * 100)
+    
+    # 볼린저 밴드 신호 결정
+    bb_signal = "neutral"
+    if position > 80:
+        bb_signal = "overbought"
+    elif position < 20:
+        bb_signal = "oversold"
+    
+    # 4. ATR (Average True Range) 계산
+    df['prev_close'] = df['trade_price'].shift(1)
+    
+    # True Range = max(고가-저가, |고가-이전 종가|, |저가-이전 종가|)
+    df['tr1'] = df['high_price'] - df['low_price']
+    df['tr2'] = abs(df['high_price'] - df['prev_close'])
+    df['tr3'] = abs(df['low_price'] - df['prev_close'])
+    df['true_range'] = df[['tr1', 'tr2', 'tr3']].max(axis=1)
+    
+    # 14일 ATR
+    df['atr_14d'] = df['true_range'].rolling(window=14).mean()
+    
+    latest_atr = df['atr_14d'].iloc[-1]
+    
+    # ATR 백분위 계산
+    atr_history = df['atr_14d'].dropna().sort_values()
+    atr_percentile = int(atr_history.searchsorted(latest_atr) / len(atr_history) * 100)
+    
+    # 5. 결과 반환
+    volatility = {
+        "bollinger_bands": {
+            "width_percentile": width_percentile,
+            "position": round(position),
+            "signal": bb_signal
+        },
+        "atr_14d": int(latest_atr),
+        "atr_percentile": atr_percentile
+    }
+    
+    return volatility
+
+async def calculate_volume() -> dict:
+    """
+    거래량 분석 - OBV, Volume EMA Ratio, Volume-Price Trend
+    """
+    # 1. 캔들 데이터 가져오기
+    candles = await get_candles_for_daily(count=50)  # 충분한 데이터
+    
+    # 2. 데이터프레임으로 변환
+    df = pd.DataFrame(candles)
+    df = df.sort_values('candle_date_time_utc')  # 날짜 오름차순 정렬
+    
+    # 3. OBV (On-Balance Volume) 계산
+    df['price_change'] = df['trade_price'].diff()
+    df['obv_change'] = np.where(df['price_change'] > 0, 
+                                df['candle_acc_trade_volume'], 
+                               np.where(df['price_change'] < 0, 
+                                       -df['candle_acc_trade_volume'], 0))
+    df['obv'] = df['obv_change'].cumsum()
+    
+    # OBV 추세 결정 (최근 5일 변화)
+    recent_obv = df['obv'].tail(5)
+    obv_slope = np.polyfit(range(len(recent_obv)), recent_obv, 1)[0]
+    
+    obv_trend = "neutral"
+    if obv_slope > 0:
+        obv_trend = "rising"
+    elif obv_slope < 0:
+        obv_trend = "falling"
+    
+    # 4. Volume EMA Ratio 계산
+    period = 20
+    df['volume_ema'] = df['candle_acc_trade_volume'].ewm(span=period, adjust=False).mean()
+    
+    # 최신 거래량과 EMA 비율
+    current_volume = df['candle_acc_trade_volume'].iloc[-1]
+    volume_ema = df['volume_ema'].iloc[-1]
+    volume_ema_ratio = round(current_volume / volume_ema, 2)
+    
+    # 5. Volume-Price Trend 계산
+    # 최근 5일 데이터로 추세 분석
+    period = 5
+    recent_prices = df['trade_price'].tail(period)
+    recent_volumes = df['candle_acc_trade_volume'].tail(period)
+    
+    # 가격 추세
+    price_change = recent_prices.iloc[-1] - recent_prices.iloc[0]
+    price_direction = "up" if price_change > 0 else "down" if price_change < 0 else "flat"
+    
+    # 거래량 추세
+    volume_change = recent_volumes.iloc[-1] - recent_volumes.iloc[0]
+    volume_direction = "up" if volume_change > 0 else "down" if volume_change < 0 else "flat"
+    
+    # 가격-거래량 관계 분석
+    volume_price_trend = "neutral"
+    if (price_direction == "up" and volume_direction == "up") or \
+       (price_direction == "down" and volume_direction == "down"):
+        volume_price_trend = "confirming"
+    elif (price_direction == "up" and volume_direction == "down") or \
+         (price_direction == "down" and volume_direction == "up"):
+        volume_price_trend = "diverging"
+    
+    # 6. 결과 반환
+    volume_data = {
+        "obv_trend": obv_trend,
+        "volume_ema_ratio": volume_ema_ratio,
+        "volume_price_trend": volume_price_trend
+    }
+    
+    return volume_data
+
+async def get_technical_signals() -> dict:
+    """
+    비트코인 기술적 신호(technical_signals) 정보를 구하는 함수
+    technical_signals는 이동평균, 모멘텀, 변동성, 거래량 지표를 포함합니다.
+    technical_signals 데이터
+    - moving_averages: 이동평균 지표 (20일, 50일, 200일)
+    - momentum: 모멘텀 지표 (RSI, MACD, Stochastic)
+    - volatility: 변동성 지표 (Bollinger Bands, ATR)
+    - volume: 거래량 지표 (OBV, Volume EMA Ratio, Volume-Price Trend)
+    """
+    # 각 지표 계산
+    moving_averages = await calculate_moving_averages()
+    momentum = await calculate_momentum()
+    volatility = await calculate_volatility()
+    volume = await calculate_volume()
+    
+    # 모든 지표 통합
+    technical_signals = {
+        "moving_averages": moving_averages,
+        "momentum": momentum,
+        "volatility": volatility,
+        "volume": volume
+    }
+    
+    return technical_signals
+
 async def analyze_btc_mareket() -> dict:
     """
     비트코인 시장 분석 시스템 실행
@@ -549,6 +928,11 @@ async def analyze_btc_mareket() -> dict:
     - last_tested: 최근 테스트된 레벨 (지지선/저항선)
     - distance_to_resistance_pct: 저항선까지의 거리 (퍼센트)
     - distance_to_support_pct: 지지선까지의 거리 (퍼센트)
+    4. technical_signals: 비트코인 기술적 신호 (이동평균, 모멘텀, 변동성, 거래량)
+    - moving_averages: 이동평균 지표 (20일, 50일, 200일)
+    - momentum: 모멘텀 지표 (RSI, MACD, Stochastic)
+    - volatility: 변동성 지표 (Bollinger Bands, ATR)
+    - volume: 거래량 지표 (OBV, Volume EMA Ratio, Volume-Price Trend)
     """
     # 1. market_info 항목 구하기
     market_info = await get_market_info()
@@ -561,12 +945,17 @@ async def analyze_btc_mareket() -> dict:
     # 3. price_levels 항목 구하기
     price_levels = await get_price_levels()
     print("Price Levels:", price_levels)
+
+    # 4. technical_signals 항목 구하기
+    technical_signals = await get_technical_signals()
+    print("Technical Signals:", technical_signals)
     
     # 4. 전체 분석 결과 통합
     bitcoin_analysis = {
         "market_info": market_info,
         "trend_analysis": trend_analysis,
-        "price_levels": price_levels
+        "price_levels": price_levels,
+        "technical_signals": technical_signals
     }
     
     return bitcoin_analysis
