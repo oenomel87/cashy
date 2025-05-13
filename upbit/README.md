@@ -21,7 +21,7 @@ Cashy MCP 서버는 [Model Context Protocol](https://github.com/microsoft/modelc
 1. 저장소 클론
 ```bash
 git clone https://github.com/oenomel87/cashy.git
-cd cashy/servers
+cd cashy/upbit
 ```
 
 2. 의존성 설치
