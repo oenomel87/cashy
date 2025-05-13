@@ -37,7 +37,7 @@ async def get_market_info() -> dict:
     volume_change_pct = calculate_volume_change(minute_candles)
     
     # 5. 30일 변동성 계산
-    volatility = calculate_volatility(daily_candles)
+    volatility = calculate_daily_volatility(daily_candles)
     
     # 6. market_info 객체 구성
     market_info = {
@@ -66,7 +66,7 @@ def calculate_volume_change(minute_candles: List[MinuteCandleStick]) -> float:
         return round(volume_change_pct, 2)
     return 0.0
 
-def calculate_volatility(daily_candles: List[DailyCandleStick]) -> float:
+def calculate_daily_volatility(daily_candles: List[DailyCandleStick]) -> float:
     """
     30일 연간화 변동성 계산
     """
@@ -734,7 +734,7 @@ async def calculate_momentum() -> dict:
     
     return momentum
 
-async def calculate_volatility() -> dict:
+async def calculate_volatility_indicators() -> dict:
     """
     변동성 분석 - Bollinger Bands, ATR
     """
@@ -890,7 +890,7 @@ async def get_technical_signals() -> dict:
     # 각 지표 계산
     moving_averages = await calculate_moving_averages()
     momentum = await calculate_momentum()
-    volatility = await calculate_volatility()
+    volatility = await calculate_volatility_indicators()
     volume = await calculate_volume()
     
     # 모든 지표 통합
