@@ -903,7 +903,7 @@ async def get_technical_signals() -> dict:
     
     return technical_signals
 
-async def analyze_btc_mareket() -> dict:
+async def analyze_btc_market() -> dict:
     """
     비트코인 시장 분석 시스템 실행
     이 함수는 비트코인 시장 정보를 수집하고, 추세 분석 및 가격 레벨을 계산하여 종합적인 분석 결과를 반환합니다.
@@ -968,8 +968,8 @@ def set_tools(mcp: FastMCP):
         mcp: FastMCP instance
     """
     mcp.add_tool(
-        analyze_btc_mareket,
-        "analyze_btc_mareket",
+        analyze_btc_market,
+        "analyze_btc_market",
         description="비트코인 시장 정보를 수집하고, \
             추세 분석 및 가격 레벨을 계산하여 종합적인 분석 결과를 반환합니다."
     )
