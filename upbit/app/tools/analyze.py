@@ -538,7 +538,8 @@ async def calculate_moving_averages() -> dict:
     candles = await get_candles_for_daily(count=200)  # 200일 이동평균을 위해 충분한 데이터
     
     # 2. 데이터프레임으로 변환
-    df = pd.DataFrame(candles)
+    # dataclass 객체 리스트를 데이터프레임으로 변환
+    df = pd.DataFrame([c.__dict__ for c in candles])
     df = df.sort_values('candle_date_time_utc')  # 날짜 오름차순 정렬
     
     # 3. 이동평균 계산
@@ -613,7 +614,8 @@ async def calculate_momentum() -> dict:
     candles = await get_candles_for_daily(count=50)  # 충분한 데이터
     
     # 2. 데이터프레임으로 변환
-    df = pd.DataFrame(candles)
+    # dataclass 객체 리스트를 데이터프레임으로 변환
+    df = pd.DataFrame([c.__dict__ for c in candles])
     df = df.sort_values('candle_date_time_utc')  # 날짜 오름차순 정렬
     
     # 3. RSI 계산 (14일 기준)
@@ -742,7 +744,8 @@ async def calculate_volatility_indicators() -> dict:
     candles = await get_candles_for_daily(count=200)  # 충분한 데이터
     
     # 2. 데이터프레임으로 변환
-    df = pd.DataFrame(candles)
+    # dataclass 객체 리스트를 데이터프레임으로 변환
+    df = pd.DataFrame([c.__dict__ for c in candles])
     df = df.sort_values('candle_date_time_utc')  # 날짜 오름차순 정렬
     
     # 3. Bollinger Bands 계산 (20일 SMA 기준, 2×표준편차)
@@ -815,7 +818,8 @@ async def calculate_volume() -> dict:
     candles = await get_candles_for_daily(count=50)  # 충분한 데이터
     
     # 2. 데이터프레임으로 변환
-    df = pd.DataFrame(candles)
+    # dataclass 객체 리스트를 데이터프레임으로 변환
+    df = pd.DataFrame([c.__dict__ for c in candles])
     df = df.sort_values('candle_date_time_utc')  # 날짜 오름차순 정렬
     
     # 3. OBV (On-Balance Volume) 계산
