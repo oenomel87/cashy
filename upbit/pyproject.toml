@@ -10,3 +10,6 @@ dependencies = [
     "pandas>=2.2.3",
     "python-dotenv>=1.1.0",
 ]
+
+[project.scripts]
+pytest = "pytest:main"
